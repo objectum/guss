@@ -12,4 +12,6 @@ yarn
 yarn dev
 ```
 
-Откройте [http://localhost:5173](http://localhost:5173) в браузере.
+Copy files `server/.env.example`, `client/.env.example`. Rename them to `.env`
+
+Open [http://localhost:5173](http://localhost:5173)
