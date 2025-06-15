@@ -1,0 +1,10 @@
+.env
+node_modules/
+.env.develop
+.env.production
+.env.staging
+.env.test
+.env.local
+.env.development
+.env.production
+client/public/*.*
