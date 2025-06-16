@@ -26,7 +26,6 @@ export class TapController {
     @UseGuards(JwtAuthGuard)
     async tap(@Body() tapDto: TapDto, @Request() req: any) {
         try {
-            console.log(req.user);
             const user_id = req.user.sub;
             const isNikita = req.user.isNikita || false;
             const result = await this.tapService.incrementTap(user_id, tapDto.round_id, isNikita);
