@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { Tap } from './tap.entity';
 import { Round } from '../round/round.entity';
 
@@ -10,7 +10,8 @@ export class TapService {
         @InjectRepository(Tap)
         private tapRepository: Repository<Tap>,
         @InjectRepository(Round)
-        private roundRepository: Repository<Round>
+        private roundRepository: Repository<Round>,
+        private dataSource: DataSource
     ) {}
 
     async incrementTap(
@@ -24,39 +25,60 @@ export class TapService {
         }
 
         const now = new Date();
-
         if (now < round.startTime || now > round.endTime) {
             throw new Error('Round is not active');
         }
 
-        let tap = await this.tapRepository.findOne({
-            where: { user_id, round_id },
-        });
+        return await this.dataSource.transaction(async manager => {
+            try {
+                let tap = await manager.findOne(Tap, {
+                    where: { user_id, round_id },
+                    lock: { mode: 'pessimistic_write' },
+                });
 
-        if (tap) {
-            // Увеличиваем счётчик только если пользователь не Никита
-            if (isNikita !== true) {
-                await this.tapRepository.query('UPDATE tap SET count = count + 1 WHERE id = $1', [
-                    tap.id,
-                ]);
+                if (tap) {
+                    if (isNikita !== true) {
+                        const newCount = tap.count + 1;
+                        const newScore = this.calculateScore(newCount);
+
+                        await manager.update(Tap, tap.id, {
+                            count: newCount,
+                            score: newScore,
+                        });
+
+                        tap.count = newCount;
+                        tap.score = newScore;
+                    }
+                } else {
+                    const initialCount = isNikita !== true ? 1 : 0;
+                    const initialScore = this.calculateScore(initialCount);
+
+                    const newTap = manager.create(Tap, {
+                        user_id,
+                        round_id,
+                        count: initialCount,
+                        score: initialScore,
+                    });
+
+                    tap = await manager.save(Tap, newTap);
+                }
+
+                return { tap, score: tap.score };
+            } catch (error) {
+                if (error.code === '23505' || error.message?.includes('duplicate')) {
+                    const existingTap = await manager.findOne(Tap, {
+                        where: { user_id, round_id },
+                    });
+                    if (existingTap) {
+                        return { tap: existingTap, score: existingTap.score };
+                    }
+                }
+                throw error;
             }
-            tap = await this.tapRepository.findOne({ where: { id: tap.id } });
-        } else {
-            // Создаём новый tap с начальным значением 1, если пользователь не Никита, иначе 0
-            const initialCount = isNikita !== true ? 1 : 0;
-            tap = this.tapRepository.create({
-                user_id,
-                round_id,
-                count: initialCount,
-            });
-            tap = await this.tapRepository.save(tap);
-        }
-
-        const score = this.calculateScore(tap.count);
-        return { tap, score };
+        });
     }
 
-    calculateScore(tapCount: number): number {
+    private calculateScore(tapCount: number): number {
         const baseScore = tapCount;
         const bonusScore = Math.floor(tapCount / 11) * 10;
         return baseScore + bonusScore;
@@ -66,7 +88,7 @@ export class TapService {
         const tap = await this.tapRepository.findOne({
             where: { user_id, round_id },
         });
-        return tap ? this.calculateScore(tap.count) : 0;
+        return tap ? tap.score : 0;
     }
 
     async getLeaderForRound(round_id: number): Promise<string | null> {
@@ -83,9 +105,8 @@ export class TapService {
         let leader = null;
 
         for (const tap of taps) {
-            const score = this.calculateScore(tap.count);
-            if (score > maxScore) {
-                maxScore = score;
+            if (tap.score > maxScore) {
+                maxScore = tap.score;
                 leader = tap.user.username;
             }
         }

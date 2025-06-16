@@ -1,8 +1,9 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, Unique } from 'typeorm';
 import { User } from '../user/user.entity';
 import { Round } from '../round/round.entity';
 
 @Entity('tap')
+@Unique(['user_id', 'round_id'])
 export class Tap {
     @PrimaryGeneratedColumn()
     id: number;
@@ -15,6 +16,9 @@ export class Tap {
 
     @Column({ type: 'integer', default: 0 })
     count: number;
+
+    @Column({ type: 'integer', default: 0 })
+    score: number;
 
     @ManyToOne(() => User)
     @JoinColumn({ name: 'user_id' })
